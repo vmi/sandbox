@@ -5,7 +5,7 @@ set -eu
 owner=vmi
 repository=sandbox
 branch=master
-version=0.0.1
+version=0.0.2
 message="$(perl -pe 's/\n/\\n/gs' <<EOF
 * item1
 * item2

@@ -1,0 +1,170 @@
+#!/usr/bin/ruby
+
+require 'bundler'
+Bundler.require
+include FileTest
+
+def help
+  print <<-EOF
+Usage: #{$0} COMMAND ARG1 ARG2 ...
+
+COMMAND:
+
+  EOF
+end
+
+do_command = $0 == __FILE__
+
+if do_command && ARGV.length == 0
+  help
+  exit 1
+end
+
+stack = Faraday::RackBuilder.new do |builder|
+  builder.use Faraday::HttpCache
+  builder.use Octokit::Response::RaiseError
+  builder.adapter Faraday.default_adapter
+end
+Octokit.middleware = stack
+
+config_dir = "#{Dir.home}/.github"
+if not directory? config_dir
+  Dir.mkdir(config_dir, 0700)
+end
+
+access_token = "#{config_dir}/access_token"
+if not file? access_token
+  print <<-EOF
+Error: Your access token not found: #{access_token}"
+
+You can generate new access token on:
+https://github.com/settings/applications
+  EOF
+  exit 1
+end
+access_token = IO.read(access_token).sub(/\s+\z/m, '')
+
+$octokit_client = Octokit::Client.new(access_token: access_token)
+
+class CLI
+  def self.error(*msgs)
+    puts "Error: #{msgs.join(' ')}"
+  end
+
+  def error(*msgs)
+    self.class.error(*msgs)
+  end
+
+  def self.execute(cmd, *args)
+    cn = cmd.capitalize
+    if not CLI.const_defined? cn
+      error("No such command: ", cmd)
+      return false
+    end
+    CLI.const_get(cn).new.execute(*args)
+  end
+
+  def execute(cmd, *args)
+    @cmd = cmd
+    cmd = "cmd_#{cmd}"
+    if not respond_to? cmd
+      error("No such sub command:", cmd)
+      return false
+    end
+    @args = args
+    send(cmd)
+  end
+end
+
+class CLI::Release < CLI
+  def help
+  end
+
+  def cmd_list
+    if @args.length != 1
+      error("Invalid arguments. Required: OWNER/REPO")
+      return
+    end
+    rs = $octokit_client.releases(@args[0])
+    p rs
+  end
+end
+
+if do_command
+  cli = CLI.new
+  cli.execute(*ARGV)
+end
+
+dummy = [
+  {
+    :url=>"https://api.github.com/repos/vmi/sandbox/releases/349581",
+    :assets_url=>"https://api.github.com/repos/vmi/sandbox/releases/349581/assets",
+    :upload_url=>"https://uploads.github.com/repos/vmi/sandbox/releases/349581/assets{?name}",
+    :html_url=>"https://github.com/vmi/sandbox/releases/tag/sandbox-0.0.2",
+    :id=>349581,
+    :tag_name=>"sandbox-0.0.2",
+    :target_commitish=>"master",
+    :name=>"sandbox-0.0.2",
+    :draft=>false,
+    :author=>{
+      :login=>"vmi",
+      :id=>74394,
+      :avatar_url=>"https://avatars.githubusercontent.com/u/74394?v=3",
+      :gravatar_id=>"",
+      :url=>"https://api.github.com/users/vmi",
+      :html_url=>"https://github.com/vmi",
+      :followers_url=>"https://api.github.com/users/vmi/followers",
+      :following_url=>"https://api.github.com/users/vmi/following{/other_user}",
+      :gists_url=>"https://api.github.com/users/vmi/gists{/gist_id}",
+      :starred_url=>"https://api.github.com/users/vmi/starred{/owner}{/repo}",
+      :subscriptions_url=>"https://api.github.com/users/vmi/subscriptions",
+      :organizations_url=>"https://api.github.com/users/vmi/orgs",
+      :repos_url=>"https://api.github.com/users/vmi/repos",
+      :events_url=>"https://api.github.com/users/vmi/events{/privacy}",
+      :received_events_url=>"https://api.github.com/users/vmi/received_events",
+      :type=>"User",
+      :site_admin=>false
+    },
+    :prerelease=>false,
+    :created_at=>"2014-05-31 07:28:47 UTC",
+    :published_at=>"2014-05-31 07:34:18 UTC",
+    :assets=>[],
+    :tarball_url=>"https://api.github.com/repos/vmi/sandbox/tarball/sandbox-0.0.2",
+    :zipball_url=>"https://api.github.com/repos/vmi/sandbox/zipball/sandbox-0.0.2",
+    :body=>"* item1\n* item2\n* item3\n"
+  }, {
+    :url=>"https://api.github.com/repos/vmi/sandbox/releases/349572",
+    :assets_url=>"https://api.github.com/repos/vmi/sandbox/releases/349572/assets",
+    :upload_url=>"https://uploads.github.com/repos/vmi/sandbox/releases/349572/assets{?name}",
+    :html_url=>"https://github.com/vmi/sandbox/releases/tag/sandbox-0.0.1",
+    :id=>349572,
+    :tag_name=>"sandbox-0.0.1",
+    :target_commitish=>"master",
+    :name=>"sandbox-0.0.1",
+    :draft=>false,
+    :author=>{:login=>"vmi",
+      :id=>74394,
+      :avatar_url=>"https://avatars.githubusercontent.com/u/74394?v=3",
+      :gravatar_id=>"",
+      :url=>"https://api.github.com/users/vmi",
+      :html_url=>"https://github.com/vmi",
+      :followers_url=>"https://api.github.com/users/vmi/followers",
+      :following_url=>"https://api.github.com/users/vmi/following{/other_user}",
+      :gists_url=>"https://api.github.com/users/vmi/gists{/gist_id}",
+      :starred_url=>"https://api.github.com/users/vmi/starred{/owner}{/repo}",
+      :subscriptions_url=>"https://api.github.com/users/vmi/subscriptions",
+      :organizations_url=>"https://api.github.com/users/vmi/orgs",
+      :repos_url=>"https://api.github.com/users/vmi/repos",
+      :events_url=>"https://api.github.com/users/vmi/events{/privacy}",
+      :received_events_url=>"https://api.github.com/users/vmi/received_events",
+      :type=>"User",
+      :site_admin=>false},
+    :prerelease=>false,
+    :created_at=>"2014-05-31 02:46:39 UTC",
+    :published_at=>"2014-05-31 07:13:57 UTC",
+    :assets=>[],
+    :tarball_url=>"https://api.github.com/repos/vmi/sandbox/tarball/sandbox-0.0.1",
+    :zipball_url=>"https://api.github.com/repos/vmi/sandbox/zipball/sandbox-0.0.1",
+    :body=>"* item1\\n* item2\\n* item3\\n"
+  }
+]
