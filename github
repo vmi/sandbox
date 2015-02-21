@@ -9,8 +9,10 @@ def help
 Usage: #{$0} COMMAND ARG1 ARG2 ...
 
 COMMAND:
-
   EOF
+  CLI.constants.map {|c| c.to_s.downcase}.sort.each do |c|
+    puts "  #{c}"
+  end
 end
 
 do_command = $0 == __FILE__
@@ -56,23 +58,27 @@ class CLI
   end
 
   def self.execute(cmd, *args)
+    if cmd == "help"
+      help
+      return true
+    end
     cn = cmd.capitalize
     if not CLI.const_defined? cn
-      error("No such command: ", cmd)
+      error("No such command:", cmd)
       return false
     end
     CLI.const_get(cn).new.execute(*args)
   end
 
-  def execute(cmd, *args)
-    @cmd = cmd
-    cmd = "cmd_#{cmd}"
-    if not respond_to? cmd
-      error("No such sub command:", cmd)
+  def execute(subcmd, *args)
+    @subcmd = subcmd
+    cmd_method = "cmd_#{subcmd}"
+    if not respond_to? cmd_method
+      error("No such sub command:", subcmd)
       return false
     end
     @args = args
-    send(cmd)
+    send(cmd_method)
   end
 end
 
@@ -81,19 +87,28 @@ class CLI::Release < CLI
   end
 
   def cmd_list
-    if @args.length != 1
+    owner_repo, = *@args
+    if owner_repo.nil? || %r{\A\w+/\w+\z} !~ owner_repo
       error("Invalid arguments. Required: OWNER/REPO")
       return
     end
-    rs = $octokit_client.releases(@args[0])
-    p rs
+    begin
+      rs = $octokit_client.releases(owner_repo)
+      rs.each do |r|
+        body = r.body.gsub(/^/, "  ").sub(/\s+\z/m, "")
+        print <<-EOF
+ID: #{r.id} / Tag: #{r.tag_name}
+#{body}
+
+        EOF
+      end
+    rescue Octokit::NotFound => e
+      error("No such repository:", owner_repo)
+    end
   end
 end
 
-if do_command
-  cli = CLI.new
-  cli.execute(*ARGV)
-end
+cli = CLI.new.execute(*ARGV) if do_command
 
 dummy = [
   {
