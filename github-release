@@ -1,0 +1,123 @@
+#!/usr/bin/env ruby
+# -*- ruby -*-
+
+require 'bundler'
+Bundler.require
+
+stack = Faraday::RackBuilder.new do |builder|
+  builder.use Faraday::HttpCache
+  builder.use Octokit::Response::RaiseError
+  builder.adapter Faraday.default_adapter
+end
+Octokit.middleware = stack
+
+
+module GitHub
+  class Client
+    attr_reader :owner, :repo, :octokit_client
+
+    def initialize
+      # get owner/repo
+      origin = `git config remote.origin.url`.chomp
+      _, @owner, @repo = *origin.match(%r{\A\w+://.+?/([^/]+)/([^/]+)\.git\z})
+
+      # get access token
+      config_dir = "#{Dir.home}/.github"
+      if not FileTest.directory? config_dir
+        Dir.mkdir(config_dir, 0700)
+        $stderr.puts "Created: #{config_dir}"
+      end
+      access_token = "#{config_dir}/access_token"
+      if not FileTest.file? access_token
+        $stderr.print <<-EOF
+Error: Your access token not found: #{access_token}"
+
+You can generate new access token on:
+https://github.com/settings/applications
+        EOF
+        raise Errno::ENOENT, "Access token not found: #{access_token}"
+      end
+      access_token = IO.read(access_token).sub(/\s+\z/m, '')
+
+      # initialize octokit client
+      @octokit_client = Octokit::Client.new(access_token: access_token)
+    end
+
+    def owner_repo
+      "#{@owner}/#{@repo}"
+    end
+
+    def url(*args)
+      "https://api.github.com/repos/#{owner_repo}/#{args.join('/')}"
+    end
+
+    def releases
+      @octokit_client.releases(owner_repo)
+    end
+
+    def release(*args)
+      @octokit_client.release(url("releases", *args))
+    end
+
+    def create_release(tag_name, body, file)
+      $stderr.puts "* Getting release information of #{tag_name} on #{owner_repo}..."
+      r = release("tags", tag_name)
+      if r.id.nil?
+        $stderr.puts "* Not released yet.", "* Creating new release..."
+        r = @octokit_client.create_release(owner_repo, tag_name,
+          { :name => tag_name, :body => body, :draft => true })
+        if file
+          ct = MIME::Types.of(file).first || "application/octet-stream"
+          $stderr.puts "* Uploading #{file} #{ct}..."
+          @octokit_client.upload_asset(r.url, file,
+            { :name => File.basename(file), :content_type => ct })
+        end
+        $stderr.puts "* Publishing..."
+        r = @octokit_client.update_release(r.url, { :draft => false })
+        op = "Create new release"
+      else
+        $stderr.puts "* Already released."
+        assets = r.assets
+        if not assets.empty?
+          assets.each do |asset|
+            $stderr.puts "* Removing #{asset.name} (#{asset.content_type})..."
+            @octokit_client.delete_release_asset(asset.url)
+          end
+        end
+        if file
+          ct = MIME::Types.of(file).first || "application/octet-stream"
+          $stderr.puts "* Uploading #{file} (#{ct})..."
+          @octokit_client.upload_asset(r.url, file,
+            { :name => File.basename(file), :content_type => ct })
+        end
+        r = @octokit_client.update_release(r.url, { :body => body })
+        op = "Update release"
+      end
+      body = r.body.gsub(/^/, "  ").sub(/\s+\z/m, '')
+      if r.assets.empty?
+        files = "  no files."
+      else
+        files = assets.map {|a| "  #{a.name}"}.join("\n")
+      end
+      $stderr.puts <<-EOF
+* Completed.
+
+Operation: #{op}
+URL: #{r.url}
+Tag/ID: #{tag_name} / #{r.id}
+Description:
+#{body}
+Files:
+#{files}
+      EOF
+    end
+  end
+end
+
+$client = GitHub::Client.new
+
+#begin
+  $client.create_release("sandbox-0.0.3", "test", "github-release")
+#rescue => e
+#  puts "Error: #{e.class}", e
+#end
